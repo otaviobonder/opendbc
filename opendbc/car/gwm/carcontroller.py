@@ -10,7 +10,7 @@ from openpilot.common.params import Params
 
 MAX_USER_TORQUE = 100  # 1.0 Nm
 EPS_MAX_TORQUE = 200
-HELLO = 20
+HELLO = 25
 
 
 class CarController(CarControllerBase):
