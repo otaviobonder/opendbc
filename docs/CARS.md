@@ -88,7 +88,6 @@
 |GMC|Yukon 2019-20|Adaptive Cruise Control (ACC) & LKAS|[Dashcam mode](#dashcam)|
 |Honda|Accord 2016-17|Honda Sensing|[Community](#community)|
 |Honda|Accord 2018-22|All|[Upstream](#upstream)|
-|Honda|Accord 2023|All|[Upstream](#upstream)|
 |Honda|Accord 2023-25|All|[Upstream](#upstream)|
 |Honda|Accord Hybrid 2017|All|[Community](#community)|
 |Honda|Accord Hybrid 2018-22|All|[Upstream](#upstream)|
