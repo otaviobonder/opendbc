@@ -1,6 +1,6 @@
 #pragma once
 
-#include "opendbc/safety/safety_declarations.h"
+#include "opendbc/safety/declarations.h"
 
 #define GWM_STEERING_AND_CRUISE 0xA1U  // RX from STEER_AND_AP_STALK
 #define GWM_GAS                 0x60U  // RX from CAR_OVERALL_SIGNALS
