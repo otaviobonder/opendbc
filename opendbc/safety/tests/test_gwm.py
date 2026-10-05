@@ -5,7 +5,9 @@ import numpy as np
 from opendbc.car.gwm.gwmcan import COUNTER_CYCLE, gwm_checksum
 from opendbc.car.gwm.values import GwmSafetyFlags
 from opendbc.car.structs import CarParams
+from opendbc.safety.tests.libsafety import libsafety_py
 import opendbc.safety.tests.common as common
+from opendbc.safety.tests.common import CANPackerSafety
 
 # (CRC byte, xor_out) of the blocks validated by safety
 BLOCK_CHECKSUMS = {
@@ -39,8 +41,13 @@ class TestGwmSafetyBase(common.CarSafetyTest, common.MotorTorqueSteeringSafetyTe
   MAX_RT_DELTA = 100
   MAX_TORQUE_ERROR = 80
 
+  SAFETY_PARAM = 0
+
   def setUp(self):
-    super().setUp()
+    self.packer = CANPackerSafety(self.DBC)
+    self.safety = libsafety_py.libsafety
+    self.safety.set_safety_hooks(self.SAFETY_MODEL, self.SAFETY_PARAM)
+    self.safety.init_tests()
     self.counters = dict.fromkeys(BLOCK_CHECKSUMS, 0)
 
   def _counter(self, addr):

@@ -12,8 +12,8 @@ EPS_ACTIVE = 1
 
 
 class CarState(CarStateBase):
-  def __init__(self, CP):
-    super().__init__(CP)
+  def __init__(self, CP, CP_SP):
+    super().__init__(CP, CP_SP)
     can_define = CANDefine(DBC[CP.carFingerprint][Bus.pt])
     self.shifter_values = can_define.dv["CAR_OVERALL_SIGNALS"]["DRIVE_MODE"]
 
@@ -21,11 +21,12 @@ class CarState(CarStateBase):
     self.steer_ignored_cnt = 0
     self.eps_fault_cnt = 0
 
-  def update(self, can_parsers) -> structs.CarState:
+  def update(self, can_parsers) -> tuple[structs.CarState, structs.CarStateSP]:
     cp = can_parsers[Bus.pt]
     cp_cam = can_parsers[Bus.cam]
     cp_loopback = can_parsers[Bus.loopback]
     ret = structs.CarState()
+    ret_sp = structs.CarStateSP()
 
     self.parse_wheel_speeds(ret,
       cp.vl["WHEEL_SPEEDS"]["FRONT_LEFT_WHEEL_SPEED"],
@@ -81,10 +82,10 @@ class CarState(CarStateBase):
     self.acc_stock_values = copy.copy(cp_cam.vl["ACC_CMD"])
     self.hud_stock_values = copy.copy(cp_cam.vl["LATERAL_STATE"])
 
-    return ret
+    return ret, ret_sp
 
   @staticmethod
-  def get_can_parsers(CP):
+  def get_can_parsers(CP, CP_SP):
     return {
       Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 0),
       Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 2),

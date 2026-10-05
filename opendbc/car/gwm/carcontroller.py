@@ -12,8 +12,8 @@ LongCtrlState = structs.CarControl.Actuators.LongControlState
 
 
 class CarController(CarControllerBase):
-  def __init__(self, dbc_names, CP):
-    super().__init__(dbc_names, CP)
+  def __init__(self, dbc_names, CP, CP_SP):
+    super().__init__(dbc_names, CP, CP_SP)
     self.params = CarControllerParams(self.CP)
     self.packer = CANPacker(dbc_names[Bus.pt])
     self.apply_torque_last = 0
@@ -22,7 +22,7 @@ class CarController(CarControllerBase):
     self.brake_accel_last = 0.0
     self.pitch = FirstOrderFilter(0, 0.5, DT_CTRL)
 
-  def update(self, CC, CS, now_nanos):
+  def update(self, CC, CC_SP, CS, now_nanos):
     can_sends = []
     actuators = CC.actuators
     lat_active = CC.latActive and abs(CS.out.steeringTorque) < self.params.STEER_DRIVER_ALLOWANCE
