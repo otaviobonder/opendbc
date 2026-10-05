@@ -18,6 +18,7 @@ class CarState(CarStateBase):
     self.shifter_values = can_define.dv["CAR_OVERALL_SIGNALS"]["DRIVE_MODE"]
 
     self.distance_button = 0
+    self.cancel_button = 0
     self.steer_ignored_cnt = 0
     self.eps_fault_cnt = 0
 
@@ -73,7 +74,12 @@ class CarState(CarStateBase):
 
     prev_distance_button = self.distance_button
     self.distance_button = int(stalk["AP_REDUCE_DISTANCE_COMMAND"] or stalk["AP_INCREASE_DISTANCE_COMMAND"])
-    ret.buttonEvents = create_button_events(self.distance_button, prev_distance_button, {1: ButtonType.gapAdjustCruise})
+    prev_cancel_button = self.cancel_button
+    self.cancel_button = int(stalk["AP_CANCEL_COMMAND"])
+    ret.buttonEvents = [
+      *create_button_events(self.distance_button, prev_distance_button, {1: ButtonType.gapAdjustCruise}),
+      *create_button_events(self.cancel_button, prev_cancel_button, {1: ButtonType.cancel}),
+    ]
 
     # stock messages to modify and send
     self.stalk_stock_values = copy.copy(stalk)

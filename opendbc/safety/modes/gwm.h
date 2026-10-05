@@ -42,6 +42,8 @@ static uint8_t gwm_block_crc(const CANPacket_t *msg, int block) {
     xor_out = 0x61U;
   } else if (msg->addr == GWM_ACC) {
     xor_out = 0x40U;
+  } else if (msg->addr == GWM_STALK) {
+    xor_out = 0x2DU;
   } else {
   }
 
@@ -91,6 +93,11 @@ static void gwm_rx_hook(const CANPacket_t *msg) {
       float speed = (float)((fl + fr + rl + rr) / 4.0 * 0.05924739 * KPH_TO_MS);
       vehicle_moving = speed > 0.0f;
       UPDATE_VEHICLE_SPEED(speed);
+    }
+
+    // MADS: the car's lane keeping can't be switched off, so the stalk's cancel is what ends lateral control
+    if ((msg->addr == GWM_STALK) && GET_BIT(msg, 46U)) {  // AP_CANCEL_COMMAND
+      mads_exit_controls(MADS_DISENGAGE_REASON_BUTTON);
     }
 
     if (msg->addr == GWM_EPS) {
@@ -182,6 +189,7 @@ static safety_config gwm_init(uint16_t param) {
 
   static RxCheck gwm_rx_checks[] = {
     {.msg = {{GWM_GAS, GWM_MAIN_BUS, 64, 100U, .max_counter = 14U, .ignore_quality_flag = true}, { 0 }, { 0 }}},
+    {.msg = {{GWM_STALK, GWM_MAIN_BUS, 8, 100U, .max_counter = 14U, .ignore_quality_flag = true}, { 0 }, { 0 }}},
     {.msg = {{GWM_BRAKE, GWM_MAIN_BUS, 64, 50U, .max_counter = 14U, .ignore_quality_flag = true}, { 0 }, { 0 }}},
     {.msg = {{GWM_WHEEL_SPEEDS, GWM_MAIN_BUS, 64, 50U, .max_counter = 14U, .ignore_quality_flag = true}, { 0 }, { 0 }}},
     {.msg = {{GWM_EPS, GWM_MAIN_BUS, 64, 50U, .max_counter = 14U, .ignore_quality_flag = true}, { 0 }, { 0 }}},

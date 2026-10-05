@@ -12,6 +12,7 @@ from opendbc.safety.tests.common import CANPackerSafety
 # (CRC byte, xor_out) of the blocks validated by safety
 BLOCK_CHECKSUMS = {
   0x60: ((8, 0x95),),
+  0xa1: ((0, 0x2D),),
   0x120: ((0, 0xEE),),
   0x13b: ((0, 0x7F), (40, 0x1A)),
   0x147: ((8, 0x61),),
@@ -91,9 +92,14 @@ class TestGwmSafetyBase(common.CarSafetyTest, common.MotorTorqueSteeringSafetyTe
     values = {f"AP_{name.upper()}_COMMAND": pressed for name, pressed in buttons.items()}
     return self.packer.make_can_msg_safety("STEER_AND_AP_STALK", 2, values)
 
+  def _stalk_msg(self, cancel, bus=0):
+    values = {"AP_CANCEL_COMMAND": cancel, "COUNTER": self._counter(0xa1)}
+    return self.packer.make_can_msg_safety("STEER_AND_AP_STALK", bus, values, fix_checksum=checksum)
+
   def _rx_check_msgs(self):
     return {0x60: self._user_gas_msg, 0x120: self._user_brake_msg, 0x13b: self._speed_msg,
-            0x147: self._torque_meas_msg, 0x2ab: lambda _: self._pcm_status_msg(True)}
+            0x147: self._torque_meas_msg, 0x2ab: lambda _: self._pcm_status_msg(True),
+            0xa1: lambda _: self._stalk_msg(False)}
 
   def test_rx_hook(self):
     for addr, make_msg in self._rx_check_msgs().items():
@@ -140,6 +146,44 @@ class TestGwmSafetyBase(common.CarSafetyTest, common.MotorTorqueSteeringSafetyTe
       for button in other_buttons:
         self.assertFalse(self._tx(self._button_msg(**{button: True})))
         self.assertFalse(self._tx(self._button_msg(cancel=True, **{button: True})))
+
+  def _engage_acc_with_mads(self):
+    self.safety.set_mads_params(True, False, False)  # lateral remains active on brake
+    self._rx(self._pcm_status_msg(False))
+    self._rx(self._pcm_status_msg(True))
+    self.assertTrue(self.safety.get_controls_allowed())
+    self.assertTrue(self.safety.get_controls_allowed_lateral())
+
+  def test_mads_cancel_ends_lateral(self):
+    for acc_engaged in (True, False):
+      with self.subTest(acc_engaged=acc_engaged):
+        self._reset_safety_hooks()
+        self._engage_acc_with_mads()
+        if not acc_engaged:
+          # the brake ends ACC, but not lateral control
+          self._rx(self._user_brake_msg(True))
+          self._rx(self._pcm_status_msg(False))
+          self._rx(self._user_brake_msg(False))
+          self.assertFalse(self.safety.get_controls_allowed())
+          self.assertTrue(self.safety.get_controls_allowed_lateral())
+
+        self._rx(self._stalk_msg(cancel=False))
+        self.assertTrue(self.safety.get_controls_allowed_lateral())
+        self._rx(self._stalk_msg(cancel=True))
+        self.assertFalse(self.safety.get_controls_allowed_lateral())
+        self._rx(self._stalk_msg(cancel=False))
+        self.assertFalse(self.safety.get_controls_allowed_lateral())
+
+        # engaging ACC again brings lateral control back
+        self._rx(self._pcm_status_msg(False))
+        self._rx(self._pcm_status_msg(True))
+        self.assertTrue(self.safety.get_controls_allowed_lateral())
+
+  def test_mads_cancel_on_camera_bus_ignored(self):
+    # our own cancel goes to the camera, only the driver's stalk on the car side counts
+    self._engage_acc_with_mads()
+    self._rx(self._stalk_msg(cancel=True, bus=2))
+    self.assertTrue(self.safety.get_controls_allowed_lateral())
 
   def test_steer_direction_bits(self):
     self.safety.set_controls_allowed(True)
