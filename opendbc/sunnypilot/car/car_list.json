@@ -993,6 +993,17 @@
     ],
     "package": "Driver Alert Package II"
   },
+  "Haval H6 2024-25": {
+    "platform": "GWM_HAVAL_H6",
+    "make": "Haval",
+    "brand": "gwm",
+    "model": "H6",
+    "year": [
+      "2024",
+      "2025"
+    ],
+    "package": "Adaptive Cruise Control (ACC) & Lane Assist"
+  },
   "Honda Accord 2018-22": {
     "platform": "HONDA_ACCORD",
     "make": "Honda",
