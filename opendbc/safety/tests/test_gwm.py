@@ -74,7 +74,10 @@ class TestGwmSafetyBase(common.CarSafetyTest, common.MotorTorqueSteeringSafetyTe
     return self.packer.make_can_msg_safety("RX_STEER_RELATED", 0, values, fix_checksum=checksum)
 
   def _pcm_status_msg(self, enable):
-    values = {"CRUISE_STATE_2": 3 if enable else 2, "COUNTER2": self._counter(0x2ab)}
+    return self._cruise_state_msg(3 if enable else 1)
+
+  def _cruise_state_msg(self, cruise_state):
+    values = {"CRUISE_STATE_2": cruise_state, "COUNTER2": self._counter(0x2ab)}
     return self.packer.make_can_msg_safety("ACC", 2, values, fix_checksum=checksum)
 
   def _torque_cmd_msg(self, torque, steer_req=1, invert_direction=None, reflected=None):
@@ -195,7 +198,13 @@ class TestGwmSafetyBase(common.CarSafetyTest, common.MotorTorqueSteeringSafetyTe
 
 
 class TestGwmStockSafety(TestGwmSafetyBase):
-  pass
+  def test_acc_timeout_at_stop_disengages(self):
+    # the stock ACC can't resume once it times out
+    self._rx(self._speed_msg(0))
+    self._rx(self._pcm_status_msg(True))
+    self._rx(self._cruise_state_msg(2))
+    self.assertFalse(self.safety.get_controls_allowed())
+    self.assertFalse(self.safety.get_cruise_engaged_prev())
 
 
 class TestGwmLongSafety(TestGwmSafetyBase, common.LongitudinalGasBrakeSafetyTest):
@@ -227,6 +236,92 @@ class TestGwmLongSafety(TestGwmSafetyBase, common.LongitudinalGasBrakeSafetyTest
       self.safety.set_controls_allowed(controls_allowed)
       for brake in (-1, -74):
         self.assertFalse(self._tx(self._send_brake_msg(brake)))
+
+  def _assert_engaged(self, engaged):
+    self.assertEqual(engaged, self.safety.get_controls_allowed())
+    self.assertEqual(engaged, self.safety.get_cruise_engaged_prev())
+
+  def _acc_timeout_at_stop(self):
+    self._rx(self._speed_msg(0))
+    self._rx(self._pcm_status_msg(True))
+    self._rx(self._cruise_state_msg(2))
+    self._assert_engaged(True)
+
+  def test_acc_timeout_at_stop_stays_engaged(self):
+    self._acc_timeout_at_stop()
+
+    # openpilot pulls away, the camera's ACC comes back only after the car moves
+    self._rx(self._speed_msg(0.4))
+    self._rx(self._cruise_state_msg(2))
+    self._assert_engaged(True)
+    self._rx(self._pcm_status_msg(True))
+    self._assert_engaged(True)
+
+    # once it's back, it's a normal disengage again
+    self._rx(self._cruise_state_msg(2))
+    self._assert_engaged(False)
+
+  def test_acc_state_2_while_moving_disengages(self):
+    self._rx(self._speed_msg(5))
+    self._rx(self._pcm_status_msg(True))
+    self._rx(self._cruise_state_msg(2))
+    self._assert_engaged(False)
+
+  def test_state_2_needs_previous_engagement(self):
+    self._rx(self._speed_msg(0))
+    self._rx(self._cruise_state_msg(1))
+    self._rx(self._cruise_state_msg(2))
+    self._assert_engaged(False)
+
+  def test_other_cruise_states_end_stop_hold(self):
+    self._acc_timeout_at_stop()
+    self._rx(self._cruise_state_msg(1))
+    self._assert_engaged(False)
+    self._rx(self._cruise_state_msg(2))
+    self._assert_engaged(False)
+
+  def test_cancel_at_stop_disengages(self):
+    # before the camera's ACC reacts, and while held after its timeout
+    for timed_out in (False, True):
+      with self.subTest(timed_out=timed_out):
+        self._reset_safety_hooks()
+        if timed_out:
+          self._acc_timeout_at_stop()
+        else:
+          self._rx(self._speed_msg(0))
+          self._rx(self._pcm_status_msg(True))
+        self._rx(self._stalk_msg(cancel=True))
+        self._rx(self._stalk_msg(cancel=False))
+        self._rx(self._cruise_state_msg(2))
+        self._assert_engaged(False)
+        self._rx(self._cruise_state_msg(2))
+        self._assert_engaged(False)
+
+  def test_brake_at_stop_disengages(self):
+    # also a tap that's released before the next ACC message
+    for timed_out in (False, True):
+      with self.subTest(timed_out=timed_out):
+        self._reset_safety_hooks()
+        if timed_out:
+          self._acc_timeout_at_stop()
+        else:
+          self._rx(self._speed_msg(0))
+          self._rx(self._pcm_status_msg(True))
+        self._rx(self._user_brake_msg(True))
+        self._rx(self._user_brake_msg(False))
+        self._rx(self._cruise_state_msg(2))
+        self._assert_engaged(False)
+        self._rx(self._cruise_state_msg(2))
+        self._assert_engaged(False)
+
+  def test_engage_after_stop_hold(self):
+    # a disengage must clear the hold, or the next engage has no rising edge
+    self._acc_timeout_at_stop()
+    self._rx(self._stalk_msg(cancel=True))
+    self._rx(self._stalk_msg(cancel=False))
+    self._rx(self._cruise_state_msg(2))
+    self._rx(self._pcm_status_msg(True))
+    self._assert_engaged(True)
 
 
 if __name__ == "__main__":

@@ -17,6 +17,10 @@
 
 static uint8_t gwm_crc_lut[256];
 
+static bool gwm_longitudinal = false;
+static bool gwm_stop_hold = false;  // staying engaged after the camera's ACC timed out at a stop
+static bool gwm_driver_disengaged = false;  // brake or cancel, until the camera's ACC has reacted
+
 // 64 byte messages are split into 8 byte blocks, each with a CRC8 in the first byte and a
 // 0-14 counter in the low nibble of the last byte. Only the blocks with the signals we use are checked.
 static int gwm_get_block(const CANPacket_t *msg) {
@@ -83,6 +87,7 @@ static void gwm_rx_hook(const CANPacket_t *msg) {
 
     if (msg->addr == GWM_BRAKE) {
       brake_pressed = GET_BIT(msg, 11U);  // PEDAL_BRAKE_PRESSED
+      gwm_driver_disengaged = gwm_driver_disengaged || brake_pressed;
     }
 
     if (msg->addr == GWM_WHEEL_SPEEDS) {
@@ -98,6 +103,7 @@ static void gwm_rx_hook(const CANPacket_t *msg) {
     // MADS: the car's lane keeping can't be switched off, so the stalk's cancel is what ends lateral control
     if ((msg->addr == GWM_STALK) && GET_BIT(msg, 46U)) {  // AP_CANCEL_COMMAND
       mads_exit_controls(MADS_DISENGAGE_REASON_BUTTON);
+      gwm_driver_disengaged = true;
     }
 
     if (msg->addr == GWM_EPS) {
@@ -110,7 +116,16 @@ static void gwm_rx_hook(const CANPacket_t *msg) {
     if (msg->addr == GWM_ACC) {
       // CRUISE_STATE_2: 1-2 standby, 3 engaged, 5 engaged with driver overriding
       uint8_t cruise_state = (msg->data[18] >> 3) & 0x7U;
-      pcm_cruise_check((cruise_state == 3U) || (cruise_state == 5U));
+      bool cruise_engaged = (cruise_state == 3U) || (cruise_state == 5U);
+
+      // The camera's ACC times out ~2s into a stop (state 2) and comes back once the car moves. openpilot can
+      // resume from there, so stay engaged. Cancel also goes to state 2, the brake to state 1.
+      gwm_stop_hold = gwm_longitudinal && (cruise_state == 2U) && !gwm_driver_disengaged &&
+                      (gwm_stop_hold || (cruise_engaged_prev && !vehicle_moving));
+      if (!cruise_engaged) {
+        gwm_driver_disengaged = false;
+      }
+      pcm_cruise_check(cruise_engaged || gwm_stop_hold);
     }
   }
 }
@@ -196,7 +211,9 @@ static safety_config gwm_init(uint16_t param) {
     {.msg = {{GWM_ACC, GWM_CAM_BUS, 64, 10U, .max_counter = 14U, .ignore_quality_flag = true}, { 0 }, { 0 }}},
   };
 
-  bool gwm_longitudinal = false;
+  gwm_longitudinal = false;
+  gwm_stop_hold = false;
+  gwm_driver_disengaged = false;
 
   SAFETY_UNUSED(param);
   #ifdef ALLOW_DEBUG

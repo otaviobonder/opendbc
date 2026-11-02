@@ -21,6 +21,9 @@ class CarState(CarStateBase):
     self.cancel_button = 0
     self.steer_ignored_cnt = 0
     self.eps_fault_cnt = 0
+    self.cruise_enabled_prev = False
+    self.stop_hold = False
+    self.driver_disengaged = False
 
   def update(self, can_parsers) -> tuple[structs.CarState, structs.CarStateSP]:
     cp = can_parsers[Bus.pt]
@@ -58,8 +61,20 @@ class CarState(CarStateBase):
 
     # 1-2: standby, 3: engaged, 5: engaged with driver overriding
     cruise_state = cp_cam.vl["ACC"]["CRUISE_STATE_2"]
+    cruise_engaged = cruise_state in (3, 5)
     ret.cruiseState.available = cruise_state != 0
-    ret.cruiseState.enabled = cruise_state in (3, 5)
+
+    # The camera's ACC times out ~2s into a stop (state 2) and comes back once the car moves. openpilot can
+    # resume from there, so stay engaged. Cancel also goes to state 2, the brake to state 1.
+    self.driver_disengaged = self.driver_disengaged or ret.brakePressed or bool(stalk["AP_CANCEL_COMMAND"])
+    if len(cp_cam.vl_all["ACC"]["CRUISE_STATE_2"]):
+      self.stop_hold = self.CP.openpilotLongitudinalControl and cruise_state == 2 and not self.driver_disengaged and \
+                       (self.stop_hold or (self.cruise_enabled_prev and ret.standstill))
+      if not cruise_engaged:
+        self.driver_disengaged = False
+      self.cruise_enabled_prev = cruise_engaged or self.stop_hold
+    ret.cruiseState.enabled = cruise_engaged or self.stop_hold
+
     ret.cruiseState.speed = cp_cam.vl["ACC"]["ACC_SPEED_SELECTION"] * CV.KPH_TO_MS
 
     ret.doorOpen = any([cp.vl["DOOR_DRIVER"]["DOOR_REAR_RIGHT_OPEN"],
